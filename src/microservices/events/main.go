@@ -63,6 +63,7 @@ type ErrorResponse struct {
 
 type KafkaWriter struct {
     writer *kafka.Writer
+    topic  string
 }
 
 func NewKafkaWriter(brokers string, topic string) *KafkaWriter {
@@ -70,6 +71,7 @@ func NewKafkaWriter(brokers string, topic string) *KafkaWriter {
         return nil
     }
     return &KafkaWriter{
+        topic: topic,
         writer: &kafka.Writer{
             Addr:     kafka.TCP(brokers),
             Topic:    topic,
@@ -84,7 +86,13 @@ func (w *KafkaWriter) Write(msg []byte) error {
     }
     ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
     defer cancel()
-    return w.writer.WriteMessages(ctx, kafka.Message{Value: msg})
+    err := w.writer.WriteMessages(ctx, kafka.Message{Value: msg})
+    if err != nil {
+        log.Printf("WRITE ERROR [%s]: %v", w.topic, err)
+    } else {
+        log.Printf("WRITE OK [%s]: %s", w.topic, string(msg))
+    }
+    return err
 }
 
 func (w *KafkaWriter) Close() {
@@ -93,10 +101,57 @@ func (w *KafkaWriter) Close() {
     }
 }
 
+type KafkaReader struct {
+    reader *kafka.Reader
+    topic  string
+}
+
+func NewKafkaReader(brokers string, topic string) *KafkaReader {
+    if brokers == "" {
+        return nil
+    }
+    return &KafkaReader{
+        topic: topic,
+        reader: kafka.NewReader(kafka.ReaderConfig{
+            Brokers:  []string{brokers},
+            Topic:    topic,
+            GroupID:  "events-service-group",
+            MinBytes: 10,
+            MaxBytes: 10e6,
+            MaxWait:  1 * time.Second,
+        }),
+    }
+}
+
+func (r *KafkaReader) Start(ctx context.Context) {
+    if r == nil || r.reader == nil {
+        return
+    }
+    go func() {
+        for {
+            msg, err := r.reader.ReadMessage(ctx)
+            if err != nil {
+                log.Printf("READ ERROR [%s]: %v", r.topic, err)
+                return
+            }
+            log.Printf("READ OK [%s] partition=%d offset=%d key=%s value=%s", r.topic, msg.Partition, msg.Offset, string(msg.Key), string(msg.Value))
+        }
+    }()
+}
+
+func (r *KafkaReader) Close() {
+    if r != nil && r.reader != nil {
+        r.reader.Close()
+    }
+}
+
 type Handler struct {
     movieWriter   *KafkaWriter
     userWriter    *KafkaWriter
     paymentWriter *KafkaWriter
+    movieReader   *KafkaReader
+    userReader    *KafkaReader
+    paymentReader *KafkaReader
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
@@ -115,9 +170,7 @@ func (h *Handler) publish(topic string, data []byte) {
     default:
         return
     }
-    if err := w.Write(data); err != nil {
-        log.Printf("kafka %s: %v", topic, err)
-    }
+    w.Write(data)
 }
 
 func (h *Handler) movieEvent(w http.ResponseWriter, r *http.Request) {
@@ -204,6 +257,57 @@ func (h *Handler) paymentEvent(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+func (h *Handler) triggerEvent(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "method not allowed"})
+        return
+    }
+
+    now := time.Now().UTC().Format(time.RFC3339)
+    results := []map[string]interface{}{}
+
+    movieEv := MovieEvent{
+        MovieID: 1, Title: "Triggered Movie", Action: "viewed",
+        UserID: 1, Rating: 8.5, Genres: []string{"Drama"}, Description: "Triggered event",
+    }
+    movieEvent := Event{
+        ID: evid("movie", movieEv.MovieID, movieEv.Action),
+        Type: "movie", Timestamp: now, Payload: movieEv,
+    }
+    md, _ := json.Marshal(movieEvent)
+    go h.publish("movie-events", md)
+    results = append(results, map[string]interface{}{"type": "movie", "event": movieEvent})
+
+    userEv := UserEvent{
+        UserID: 42, Username: "triggered_user", Email: "trigger@test.com",
+        Action: "created", Timestamp: now,
+    }
+    userEvent := Event{
+        ID: evid("user", userEv.UserID, userEv.Action),
+        Type: "user", Timestamp: now, Payload: userEv,
+    }
+    ud, _ := json.Marshal(userEvent)
+    go h.publish("user-events", ud)
+    results = append(results, map[string]interface{}{"type": "user", "event": userEvent})
+
+    paymentEv := PaymentEvent{
+        PaymentID: 100, UserID: 42, Amount: 29.99,
+        Status: "completed", Timestamp: now, MethodType: "credit_card",
+    }
+    paymentEvent := Event{
+        ID: evid("payment", paymentEv.PaymentID, paymentEv.Status),
+        Type: "payment", Timestamp: now, Payload: paymentEv,
+    }
+    pd, _ := json.Marshal(paymentEvent)
+    go h.publish("payment-events", pd)
+    results = append(results, map[string]interface{}{"type": "payment", "event": paymentEvent})
+
+    writeJSON(w, http.StatusCreated, map[string]interface{}{
+        "status":  "triggered",
+        "events":  results,
+    })
+}
+
 func evid(prefix string, n int, suffix string) string {
     s := ""
     for n > 0 {
@@ -234,10 +338,21 @@ func main() {
         movieWriter:   NewKafkaWriter(brokers, "movie-events"),
         userWriter:    NewKafkaWriter(brokers, "user-events"),
         paymentWriter: NewKafkaWriter(brokers, "payment-events"),
+        movieReader:   NewKafkaReader(brokers, "movie-events"),
+        userReader:    NewKafkaReader(brokers, "user-events"),
+        paymentReader: NewKafkaReader(brokers, "payment-events"),
     }
     defer h.movieWriter.Close()
     defer h.userWriter.Close()
     defer h.paymentWriter.Close()
+    defer h.movieReader.Close()
+    defer h.userReader.Close()
+    defer h.paymentReader.Close()
+
+    ctx := context.Background()
+    h.movieReader.Start(ctx)
+    h.userReader.Start(ctx)
+    h.paymentReader.Start(ctx)
 
     if brokers == "" {
         log.Println("KAFKA_BROKERS not set — events will be logged only")
@@ -249,6 +364,7 @@ func main() {
     http.HandleFunc("/api/events/movie", h.movieEvent)
     http.HandleFunc("/api/events/user", h.userEvent)
     http.HandleFunc("/api/events/payment", h.paymentEvent)
+    http.HandleFunc("/api/events/trigger", h.triggerEvent)
 
     log.Printf("Events service listening on :%s", port)
     log.Fatal(http.ListenAndServe(":"+port, nil))

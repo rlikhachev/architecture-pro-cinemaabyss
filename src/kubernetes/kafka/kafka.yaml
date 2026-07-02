@@ -93,6 +93,7 @@ metadata:
   labels:
     app: kafka
 spec:
+  clusterIP: None
   ports:
   - port: 9092
     name: kafka
@@ -142,7 +143,7 @@ spec:
             cpu: "1000m"
         env:
         - name: KAFKA_ADVERTISED_LISTENERS
-          value: PLAINTEXT://kafka:9092
+          value: PLAINTEXT://kafka-0.kafka:9092
         - name: KAFKA_LISTENERS
           value: PLAINTEXT://0.0.0.0:9092
         - name: KAFKA_PORT

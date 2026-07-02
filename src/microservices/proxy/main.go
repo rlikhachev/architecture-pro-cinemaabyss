@@ -107,7 +107,7 @@ func (pc *ProxyController) ProxyToEvents(w http.ResponseWriter, r *http.Request)
 }
 
 func (pc *ProxyController) proxyRequest(w http.ResponseWriter, r *http.Request, targetURL string) {
-    req, err := http.NewRequest(r.Method, targetURL+r.URL.Path, r.Body)
+    req, err := http.NewRequest(r.Method, targetURL+r.URL.RequestURI(), r.Body)
     if err != nil {
         http.Error(w, fmt.Sprintf("Failed to create request: %v", err), http.StatusInternalServerError)
         return
