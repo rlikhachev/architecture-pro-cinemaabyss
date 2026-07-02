@@ -58,9 +58,8 @@
 
 Необходимые тесты для проверки этого API вызываются при запуске npm run test:local из папки tests/postman 
 Приложите скриншот тестов и скриншот состояния топиков Kafka http://localhost:8090 
-[ссылка на файл](diagrams/out/task_2_3.png)
-[ссылка на файл](diagrams/out/task_3.png)
-
+[ссылка на файл](diagrams/out/task_2_1.png)
+[ссылка на файл](diagrams/out/task_2_2.png)
 
 
 ## Задание 3
