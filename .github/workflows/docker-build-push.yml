@@ -146,10 +146,9 @@ jobs:
           done
           docker compose ps
 
-      - name: Build and run Postman API tests in Docker network
+      - name: Run Postman API tests via docker compose
         run: |
-          docker build -t cinemaabyss-tests ./tests/postman
-          docker run --network=cinemaabyss-network cinemaabyss-tests --environment docker
+          docker compose run --rm postman-tests --environment docker
 
       - name: Upload Postman test report
         uses: actions/upload-artifact@v4

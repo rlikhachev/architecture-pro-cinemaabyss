@@ -141,6 +141,19 @@ services:
     networks:
       - cinemaabyss-network
 
+  # Postman API Tests (run manually: docker compose run postman-tests)
+  postman-tests:
+    build:
+      context: ./tests/postman
+      dockerfile: Dockerfile
+    container_name: cinemaabyss-postman-tests
+    depends_on:
+      - proxy-service
+    networks:
+      - cinemaabyss-network
+    profiles:
+      - tests
+
 volumes:
   postgres-data:
 
