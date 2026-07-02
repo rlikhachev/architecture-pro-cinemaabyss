@@ -4,7 +4,8 @@ WORKDIR /app
 
 COPY main.go ./
 
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o proxy-service main.go
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -a -installsuffix cgo -o proxy-service main.go
 
 FROM alpine:latest
 

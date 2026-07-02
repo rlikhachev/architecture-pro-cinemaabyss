@@ -23,7 +23,7 @@ spec:
       containers:
       - name: movies-service
         image: ghcr.io/rlikhachev/architecture-pro-cinemaabyss/movies-service:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
         - containerPort: 8081
         env:
