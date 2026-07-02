@@ -1,73 +1,19 @@
 package main
 
 import (
+    "context"
     "encoding/json"
     "log"
     "net/http"
     "os"
-    "sync"
     "time"
 
     "github.com/segmentio/kafka-go"
 )
 
 type Config struct {
-    KafkaBrokers          []string
-    MovieEventsTopic      string
-    UserEventsTopic       string
-    PaymentEventsTopic    string
-    ServerPort            string
-}
-
-func (c *Config) TopicFor(path string) string {
-    switch path {
-    case "/api/events/movie":
-        return c.MovieEventsTopic
-    case "/api/events/user":
-        return c.UserEventsTopic
-    case "/api/events/payment":
-        return c.PaymentEventsTopic
-    default:
-        return ""
-    }
-}
-
-type KafkaProducer struct {
-    writers map[string]*kafka.Writer
-    mu      sync.RWMutex
-}
-
-func NewKafkaProducer(brokers []string) *KafkaProducer {
-    writers := make(map[string]*kafka.Writer)
-    topics := []string{"movie-events", "user-events", "payment-events"}
-    for _, t := range topics {
-        writers[t] = kafka.NewWriter(kafka.WriterConfig{
-            Brokers:  brokers,
-            Topic:    t,
-            Balancer: &kafka.LeastBytes{},
-        })
-    }
-    return &KafkaProducer{writers: writers}
-}
-
-func (kp *KafkaProducer) Close() {
-    kp.mu.Lock()
-    defer kp.mu.Unlock()
-    for _, w := range kp.writers {
-        w.Close()
-    }
-}
-
-func (kp *KafkaProducer) Publish(topic string, data []byte) (partition int, offset int64, err error) {
-    kp.mu.RLock()
-    w, ok := kp.writers[topic]
-    kp.mu.RUnlock()
-    if !ok {
-        return 0, 0, nil
-    }
-    msg := kafka.Message{Value: data}
-    err = w.WriteMessages(nil, msg)
-    return 0, 0, err
+    Port          string
+    KafkaBrokers  string
 }
 
 type Event struct {
@@ -105,27 +51,73 @@ type PaymentEvent struct {
 }
 
 type EventResponse struct {
-    Status    string `json:"status"`
-    Partition int    `json:"partition"`
-    Offset    int64  `json:"offset"`
-    Event     Event  `json:"event"`
+    Status    string      `json:"status"`
+    Partition int         `json:"partition"`
+    Offset    int64       `json:"offset"`
+    Event     Event       `json:"event"`
 }
 
 type ErrorResponse struct {
     Error string `json:"error"`
 }
 
-type Handler struct {
-    config   *Config
-    producer *KafkaProducer
+type KafkaWriter struct {
+    writer *kafka.Writer
 }
 
-func NewHandler(cfg *Config, p *KafkaProducer) *Handler {
-    return &Handler{config: cfg, producer: p}
+func NewKafkaWriter(brokers string, topic string) *KafkaWriter {
+    if brokers == "" {
+        return nil
+    }
+    return &KafkaWriter{
+        writer: &kafka.Writer{
+            Addr:     kafka.TCP(brokers),
+            Topic:    topic,
+            Balancer: &kafka.LeastBytes{},
+        },
+    }
+}
+
+func (w *KafkaWriter) Write(msg []byte) error {
+    if w == nil || w.writer == nil {
+        return nil
+    }
+    ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+    defer cancel()
+    return w.writer.WriteMessages(ctx, kafka.Message{Value: msg})
+}
+
+func (w *KafkaWriter) Close() {
+    if w != nil && w.writer != nil {
+        w.writer.Close()
+    }
+}
+
+type Handler struct {
+    movieWriter   *KafkaWriter
+    userWriter    *KafkaWriter
+    paymentWriter *KafkaWriter
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
     writeJSON(w, http.StatusOK, map[string]bool{"status": true})
+}
+
+func (h *Handler) publish(topic string, data []byte) {
+    var w *KafkaWriter
+    switch topic {
+    case "movie-events":
+        w = h.movieWriter
+    case "user-events":
+        w = h.userWriter
+    case "payment-events":
+        w = h.paymentWriter
+    default:
+        return
+    }
+    if err := w.Write(data); err != nil {
+        log.Printf("kafka %s: %v", topic, err)
+    }
 }
 
 func (h *Handler) movieEvent(w http.ResponseWriter, r *http.Request) {
@@ -140,33 +132,19 @@ func (h *Handler) movieEvent(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    if ev.MovieID == 0 || ev.Title == "" || ev.Action == "" {
-        writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "missing required fields: movie_id, title, action"})
-        return
-    }
-
     event := Event{
-        ID:        "movie-" + itoa(ev.MovieID) + "-" + ev.Action,
+        ID:        evid("movie", ev.MovieID, ev.Action),
         Type:      "movie",
         Timestamp: time.Now().UTC().Format(time.RFC3339),
         Payload:   ev,
     }
 
-    topic := h.config.TopicFor("/api/events/movie")
     data, _ := json.Marshal(event)
-
-    part, off, err := h.producer.Publish(topic, data)
-    if err != nil {
-        log.Printf("kafka publish error: %v", err)
-        writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "failed to publish event"})
-        return
-    }
+    go h.publish("movie-events", data)
 
     writeJSON(w, http.StatusCreated, EventResponse{
-        Status:    "success",
-        Partition: part,
-        Offset:    off,
-        Event:     event,
+        Status: "success",
+        Event:  event,
     })
 }
 
@@ -182,33 +160,19 @@ func (h *Handler) userEvent(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    if ev.UserID == 0 || ev.Action == "" || ev.Timestamp == "" {
-        writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "missing required fields: user_id, action, timestamp"})
-        return
-    }
-
     event := Event{
-        ID:        "user-" + itoa(ev.UserID) + "-" + ev.Action,
+        ID:        evid("user", ev.UserID, ev.Action),
         Type:      "user",
         Timestamp: ev.Timestamp,
         Payload:   ev,
     }
 
-    topic := h.config.TopicFor("/api/events/user")
     data, _ := json.Marshal(event)
-
-    part, off, err := h.producer.Publish(topic, data)
-    if err != nil {
-        log.Printf("kafka publish error: %v", err)
-        writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "failed to publish event"})
-        return
-    }
+    go h.publish("user-events", data)
 
     writeJSON(w, http.StatusCreated, EventResponse{
-        Status:    "success",
-        Partition: part,
-        Offset:    off,
-        Event:     event,
+        Status: "success",
+        Event:  event,
     })
 }
 
@@ -224,46 +188,32 @@ func (h *Handler) paymentEvent(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    if ev.PaymentID == 0 || ev.UserID == 0 || ev.Amount == 0 || ev.Status == "" || ev.Timestamp == "" {
-        writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "missing required fields: payment_id, user_id, amount, status, timestamp"})
-        return
-    }
-
     event := Event{
-        ID:        "payment-" + itoa(ev.PaymentID) + "-" + ev.Status,
+        ID:        evid("payment", ev.PaymentID, ev.Status),
         Type:      "payment",
         Timestamp: ev.Timestamp,
         Payload:   ev,
     }
 
-    topic := h.config.TopicFor("/api/events/payment")
     data, _ := json.Marshal(event)
-
-    part, off, err := h.producer.Publish(topic, data)
-    if err != nil {
-        log.Printf("kafka publish error: %v", err)
-        writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "failed to publish event"})
-        return
-    }
+    go h.publish("payment-events", data)
 
     writeJSON(w, http.StatusCreated, EventResponse{
-        Status:    "success",
-        Partition: part,
-        Offset:    off,
-        Event:     event,
+        Status: "success",
+        Event:  event,
     })
 }
 
-func itoa(n int) string {
-    if n == 0 {
-        return "0"
-    }
+func evid(prefix string, n int, suffix string) string {
     s := ""
     for n > 0 {
         s = string(rune('0'+n%10)) + s
         n /= 10
     }
-    return s
+    if s == "" {
+        s = "0"
+    }
+    return prefix + "-" + s + "-" + suffix
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
@@ -273,27 +223,27 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 }
 
 func main() {
-    brokers := os.Getenv("KAFKA_BROKERS")
-    if brokers == "" {
-        brokers = "localhost:9092"
-    }
     port := os.Getenv("PORT")
     if port == "" {
         port = "8082"
     }
 
-    cfg := &Config{
-        KafkaBrokers:       []string{brokers},
-        MovieEventsTopic:   "movie-events",
-        UserEventsTopic:    "user-events",
-        PaymentEventsTopic: "payment-events",
-        ServerPort:         port,
+    brokers := os.Getenv("KAFKA_BROKERS")
+
+    h := &Handler{
+        movieWriter:   NewKafkaWriter(brokers, "movie-events"),
+        userWriter:    NewKafkaWriter(brokers, "user-events"),
+        paymentWriter: NewKafkaWriter(brokers, "payment-events"),
     }
+    defer h.movieWriter.Close()
+    defer h.userWriter.Close()
+    defer h.paymentWriter.Close()
 
-    producer := NewKafkaProducer(cfg.KafkaBrokers)
-    defer producer.Close()
-
-    h := NewHandler(cfg, producer)
+    if brokers == "" {
+        log.Println("KAFKA_BROKERS not set — events will be logged only")
+    } else {
+        log.Printf("connected to Kafka at %s", brokers)
+    }
 
     http.HandleFunc("/api/events/health", h.health)
     http.HandleFunc("/api/events/movie", h.movieEvent)
