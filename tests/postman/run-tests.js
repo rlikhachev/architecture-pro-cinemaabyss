@@ -1,7 +1,7 @@
 const newman = require('newman');
 const fs = require('fs');
 const path = require('path');
-const yargs = require('yargs/yargs');
+const yargs = require('yargs');
 const { hideBin } = require('yargs/helpers');
 
 // Parse command line arguments
@@ -27,7 +27,7 @@ const argv = yargs(hideBin(process.argv))
     alias: 'r',
     description: 'Reporters to use (comma-separated)',
     type: 'string',
-    default: 'cli,htmlextra,junit'
+    default: 'cli,junit'
   })
   .option('bail', {
     alias: 'b',
@@ -75,17 +75,6 @@ const newmanOptions = {
   environment: require(environmentPath),
   reporters: reporters,
   reporter: {
-    htmlextra: {
-      export: path.join(reportsDir, `report-${argv.environment}-${new Date().toISOString().replace(/:/g, '-')}.html`),
-      template: 'default',
-      showOnlyFails: false,
-      noSyntaxHighlighting: false,
-      testPaging: true,
-      browserTitle: "CinemaAbyss API Test Report",
-      title: "CinemaAbyss API Test Report",
-      titleSize: 1,
-      omitHeaders: false
-    },
     junit: {
       export: path.join(reportsDir, `junit-report-${argv.environment}-${new Date().toISOString().replace(/:/g, '-')}.xml`)
     }

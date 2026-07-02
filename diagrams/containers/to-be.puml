@@ -19,16 +19,8 @@ System_Boundary(cinemaAbyss, "CinemaAbyss", "") {
     Rel_L(proxy_service, session_cache, "Uses", "Cashing users auth data")    
     Rel_D(customer, proxy_service, "Uses", "HTTPS")
 
-    ' Person(administarator, "Administrator", "Company employe responsible for movie management and user support")
-    ' Rel_R(administarator, proxy_service, "Uses", "HTTPS")
-
-
-    ' System_Boundary(event_hub, "Event bus", "Event soursing and async interaction") {
-    '     ContainerQueue(kafka, "Kafka", "Main event bus")
-    ' }
-
     Container(payment_service, "Payment Service", "Payments managment")
-    ContainerDb(payment_db, "User Database", "payment data")
+    ContainerDb(payment_db, "Payment Database", "payment data")
     Rel_D(payment_service, payment_db, "Uses", "Store payment data")
     Rel_D(proxy_service, payment_service, "Uses", "HTTP", "/payments")
     Rel_D(payment_service, payment_provider, "Manage payments", "Control payments status")  
@@ -51,10 +43,5 @@ System_Boundary(cinemaAbyss, "CinemaAbyss", "") {
     Rel_D(movies_service, movies_db, "Uses", "Store movies metadata")
     Rel_D(proxy_service, movies_service, "Uses", "HTTP", "/movies")
     Rel_D(movies_service, recomend_system, "Uses", "Request recomendations")  
-
 }
-
-' Container_Ext(payments_gateaway, "Ext Payments gateaway", "Payment services integrations")
-' Rel(payment_service, payments_gateaway, "Uses", "Payment interactions")
-
 @enduml
