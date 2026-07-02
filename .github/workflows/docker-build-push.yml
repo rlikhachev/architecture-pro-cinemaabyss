@@ -130,9 +130,13 @@ jobs:
         run: |
           docker compose up -d
 
+      - name: Check running containers
+        run: docker compose ps
+
       - name: Wait for services to be healthy
         run: |
-          for i in $(seq 1 30); do
+          echo "Waiting for proxy service on http://localhost:8000/health ..."
+          for i in $(seq 1 60); do
             if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
               echo "Proxy service is ready"
               break
@@ -140,12 +144,13 @@ jobs:
             echo "Waiting for services... ($i)"
             sleep 5
           done
+          docker compose ps
 
       - name: Run Postman API tests
         run: |
           cd tests/postman
           npm install
-          npm run test:docker
+          npm run test:local
 
       - name: Upload Postman test report
         uses: actions/upload-artifact@v4
