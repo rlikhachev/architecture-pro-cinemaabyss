@@ -5,7 +5,7 @@ global:
 
 # Image pull secrets
 imagePullSecrets:
-  dockerconfigjson: ewoJImF1dGhzIjogewoJCSJnaGNyLmlvIjogewoJCQkiYXV0aCI6
+  dockerconfigjson: ewoJImF1dGhzIjogewoJCSIxNDI3ODA3NTI4OTIuZGtyLmVjci51cy1lYXN0LTEuYW1hem9uYXdzLmNvbSI6IHt9LAogICAgICAgICAgICAgICAgImdoY3IuaW8iOiB7CiAgICAgICAgICAgICAgICAgICAgICAgICJhdXRoIjogImNteHBhMmhoWTJobGRqcG5hSEJmUkhKeFEzWndNSGRCWmtWUlNrMTFSbXB2UjFOb01rWXhabmhNV1VjMk1qaE9aMnQzQ2c9PSIKICAgICAgICAgICAgICAgIH0KCX0sCgkiY3JlZHNTdG9yZSI6ICJkZXNrdG9wIiwKCSJjdXJyZW50Q29udGV4dCI6ICJkZXNrdG9wLWxpbnV4IiwKCSJwbHVnaW5zIjogewoJCSIteC1jbGktaGludHMiOiB7CgkJCSJlbmFibGVkIjogInRydWUiCgkJfSwKCQkiYWkiOiB7CgkJCSJob29rcyI6ICJidWlsZCxidWlsZHggYnVpbGQscnVuLGNvbXBvc2UiCgkJfSwKCQkiZGVidWciOiB7CgkJCSJob29rcyI6ICJleGVjIgoJCX0sCgkJInNjb3V0IjogewoJCQkiaG9va3MiOiAicHVsbCxidWlsZHggYnVpbGQiCgkJfQoJfSwKCSJmZWF0dXJlcyI6IHsKCQkiaG9va3MiOiAidHJ1ZSIKCX0KfQo=
 # Database configuration
 database:
   host: postgres
@@ -162,7 +162,7 @@ zookeeper:
 # Ingress configuration
 ingress:
   enabled: true
-  className: nginx
+  className: ""
   annotations:
     kubernetes.io/ingress.class: nginx
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
