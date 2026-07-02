@@ -3,7 +3,7 @@ name: Docker Build and Push
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ '**' ]
     paths:
       - 'src/**'
       - '.github/workflows/docker-build-push.yml'
@@ -125,3 +125,31 @@ jobs:
           labels: ${{ steps.meta-proxy.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Start services for API tests
+        run: |
+          docker compose up -d
+
+      - name: Wait for services to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              echo "Proxy service is ready"
+              break
+            fi
+            echo "Waiting for services... ($i)"
+            sleep 5
+          done
+
+      - name: Run Postman API tests
+        run: |
+          cd tests/postman
+          npm install
+          npm run test:docker
+
+      - name: Upload Postman test report
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: postman-test-report
+          path: tests/postman/reports/
