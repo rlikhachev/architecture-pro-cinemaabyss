@@ -96,6 +96,11 @@ services:
     environment:
       PORT: 8082
       KAFKA_BROKERS: kafka:9092
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8082/api/events/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - cinemaabyss-network
 
@@ -135,6 +140,19 @@ services:
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
     networks:
       - cinemaabyss-network
+
+  # Postman API Tests (run manually: docker compose run postman-tests)
+  postman-tests:
+    build:
+      context: ./tests/postman
+      dockerfile: Dockerfile
+    container_name: cinemaabyss-postman-tests
+    depends_on:
+      - proxy-service
+    networks:
+      - cinemaabyss-network
+    profiles:
+      - tests
 
 volumes:
   postgres-data:

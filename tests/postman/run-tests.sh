@@ -24,7 +24,7 @@ function show_usage {
 # Default values
 ENVIRONMENT="local"
 FOLDER=""
-REPORTERS="cli,htmlextra,junit"
+REPORTERS="cli,junit"
 BAIL=false
 TIMEOUT=10000
 USE_DOCKER=false

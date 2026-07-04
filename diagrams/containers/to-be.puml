@@ -1,0 +1,47 @@
+@startuml
+!include ../c4/C4_Container.puml
+
+
+title "CinemaAbyss", to-be container diagram
+
+Person(customer, "Client", "Content viewer via wary devices")
+Container_Ext(payment_provider, "Payment System", "")
+Container_Ext(recomend_system, "Recomend System", "")
+
+
+System_Boundary(cinemaAbyss, "CinemaAbyss", "") {
+    
+    
+    Container(proxy_service, "Proxy service", "GoLang server", "API Proxy")
+    Container(auth_service, "Auth service", "Identy and autorize users")
+    Container(session_cache, "Auth Cache", "Auth data cache")
+    Rel_R(proxy_service, auth_service, "Uses", "Autorize users")
+    Rel_L(proxy_service, session_cache, "Uses", "Cashing users auth data")    
+    Rel_D(customer, proxy_service, "Uses", "HTTPS")
+
+    Container(payment_service, "Payment Service", "Payments managment")
+    ContainerDb(payment_db, "Payment Database", "payment data")
+    Rel_D(payment_service, payment_db, "Uses", "Store payment data")
+    Rel_D(proxy_service, payment_service, "Uses", "HTTP", "/payments")
+    Rel_D(payment_service, payment_provider, "Manage payments", "Control payments status")  
+
+
+    Container(user_service, "User Service", "Users profile and management")
+    ContainerDb(user_db, "User Database", "Users profiles")
+    Rel_D(user_service, user_db, "Uses", "TCP")
+    Rel_D(proxy_service, user_service, "Uses", "HTTP", "/users")
+
+
+    Container(subscribtion_service, "Subscription Service", "Catalog of adopted solutions")
+    ContainerDb(subscribtion_db, "Subscription Database", "Subscribtion data")       
+    Rel_D(subscribtion_service, subscribtion_db, "Uses", "Store subscribtion data")
+    Rel_D(proxy_service, subscribtion_service, "Uses", "HTTP", "/subscriptions")
+
+
+    Container(movies_service, "Movies Service", "Provides movies metadata interaction")
+    ContainerDb(movies_db, "User Database", "Movies metadata")
+    Rel_D(movies_service, movies_db, "Uses", "Store movies metadata")
+    Rel_D(proxy_service, movies_service, "Uses", "HTTP", "/movies")
+    Rel_D(movies_service, recomend_system, "Uses", "Request recomendations")  
+}
+@enduml
